@@ -1,0 +1,44 @@
+services:
+  backend:
+    image: jjpisano05/group05backend:1.2
+    container_name: group05backend
+    expose:
+      - '22131'
+    healthcheck:
+      test: ['CMD', 'curl', '-f', 'http://localhost:22132/health']
+      interval: 10s
+      timeout: 3s
+      retries: 10
+      start_period: 30s
+
+  frontend:
+    image: jjpisano05/group05frontend:1.1
+    container_name: group05frontend
+    depends_on:
+      backend:
+        condition: service_healthy
+    ports:
+      - '22130:22130'
+    expose:
+      - '22130'
+
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: prometheus
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    ports:
+      - '9090:9090'
+    depends_on:
+      - frontend
+      - backend
+
+networks:
+  cookiemancer_net:
+    driver: bridge
+
+volumes:
+  prometheus_data:
+    driver: local

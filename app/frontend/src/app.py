@@ -1,8 +1,35 @@
 import gradio as gr
 import requests
 import os
+import prometheus_client
+from time import perf_counter
 
 #Code for differentiation between running locally and API is based on Professor Paffenroth's Chatbot
+
+FRONTEND_LOCAL_REQUESTS_TOTAL = prometheus_client.Counter(
+    'frontend_local_requests_total',
+    'Total number of /local requests made by the frontend.'
+)
+FRONTEND_API_REQUESTS_TOTAL = prometheus_client.Counter(
+    'frontend_api_requests_total',
+    'Total number of /api requests made by the frontend.'
+)
+FRONTEND_LOCAL_REQUEST_DURATION_SECONDS = prometheus_client.Histogram(
+    'frontend_local_request_duration_seconds',
+    'Time spent generating recommendation via a local model in the frontend'
+)
+FRONTEND_API_REQUEST_DURATION_SECONDS = prometheus_client.Histogram(
+    'frontend_API_request_duration_seconds',
+    'Time spent generating recommendation via an API model in the frontend'
+)
+FRONTEND_LOCAL_REQUEST_ERRORS_TOTAL = prometheus_client.Counter(
+    'frontend_local_request_errors_total',
+    'Total number of failed /local requests made by the frontend'
+)
+FRONTEND_API_REQUEST_ERRORS_TOTAL = prometheus_client.Counter(
+    'front_api_request_errors_total',
+    'Total number of failed /api requests made by the frontend'
+)
 
 api_url = "http://paffenroth-23.dyn.wpi.edu:22131"
 
@@ -16,6 +43,8 @@ def respond(
     
     if use_local == True:
         #run local model
+        FRONTEND_LOCAL_REQUESTS_TOTAL.inc()
+        started = perf_counter()
         
         data = {
             "message": message,
@@ -23,19 +52,25 @@ def respond(
         }
 
         #send post request
-        response = requests.post(f"{api_url}/local", json=data)
+        try:
+            response = requests.post(f"{api_url}/local", json=data)
 
-        #check it was recieved
-        if response.status_code == 200:
-            print("Response:", response.text)
-            
-            yield response.text
-        else:
-            print("No response", response.status_code, response.text)
+            #check it was recieved
+            if response.status_code == 200:
+                print("Response:", response.text)
+                
+                yield response.text
+            else:
+                FRONTEND_LOCAL_REQUEST_ERRORS_TOTAL.inc()
+                print("No response", response.status_code, response.text)
 
-            yield "an error has occured"
+                yield "an error has occured"
+        finally:
+            FRONTEND_LOCAL_REQUEST_DURATION_SECONDS.observe(perf_counter() - started)
     else:
         #run api model
+        FRONTEND_API_REQUESTS_TOTAL.inc()
+        started = perf_counter()
         
         data = {
             "message": message,
@@ -44,17 +79,21 @@ def respond(
         }
 
         #send post request
-        response = requests.post(f"{api_url}/api", json=data)
+        try:
+            response = requests.post(f"{api_url}/api", json=data)
 
-        #check it was recieved
-        if response.status_code == 200:
-            print("Response:", response.text)
-            
-            yield response.text
-        else:
-            print("No response", response.status_code, response.text)
+            #check it was recieved
+            if response.status_code == 200:
+                print("Response:", response.text)
+                
+                yield response.text
+            else:
+                FRONTEND_API_REQUEST_ERRORS_TOTAL.inc()
+                print("No response", response.status_code, response.text)
 
-            yield "an error has occured"
+                yield "an error has occured"
+        finally:
+            FRONTEND_API_REQUEST_DURATION_SECONDS.observe(perf_counter() - started)
 
 
 chatbot = gr.ChatInterface(

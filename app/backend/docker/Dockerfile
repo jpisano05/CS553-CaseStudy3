@@ -5,7 +5,7 @@ WORKDIR /app
 COPY docker/requirements.txt /app/requirements.txt
 
 RUN pip install --no-cache-dir torch torchvision --index-url https://download.pytorch.org/whl/cpu
-RUN pip install --no-cache-dir fastapi uvicorn transformers accelerate bitsandbytes
+RUN pip install --no-cache-dir fastapi uvicorn transformers accelerate bitsandbytes prometheus-client
 
 COPY src /app/src
 

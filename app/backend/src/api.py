@@ -1,9 +1,42 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, Response
 from fastapi.responses import PlainTextResponse
 from pydantic import BaseModel
 from huggingface_hub import InferenceClient
 from transformers import AutoTokenizer, AutoModelForCausalLM, pipeline
 import torch
+from time import perf_counter
+import prometheus_client
+
+#prometheus
+HEALTH_REQUESTS_TOTAL = prometheus_client.Counter(
+    'backend_health_requests_total',
+    'Total number of / requests recieved by the backend.'
+)
+LOCAL_REQUESTS_TOTAL = prometheus_client.Counter(
+    'backend_local_requests_total',
+    'Total number of /local requests recieved by the backend.'
+)
+API_REQUESTS_TOTAL = prometheus_client.Counter(
+    'backend_api_requests_total',
+    'Total number of /api requests recieved by the backend.'
+)
+LOCAL_REQUEST_DURATION_SECONDS = prometheus_client.Histogram(
+    'backend_local_request_duration_seconds',
+    'Time spent generating recommendation via a local model in the backend'
+)
+API_REQUEST_DURATION_SECONDS = prometheus_client.Histogram(
+    'backend_API_request_duration_seconds',
+    'Time spent generating recommendation via an API model in the backend'
+)
+LOCAL_REQUEST_ERRORS_TOTAL = prometheus_client.Counter(
+    'backend_local_request_errors_total',
+    'Total number of failed /local requests handled by the backend'
+)
+API_REQUEST_ERRORS_TOTAL = prometheus_client.Counter(
+    'backend_api_request_errors_total',
+    'Total number of failed /api requests handled by the backend'
+)
+
 
 #globals
 SYSTEM_PROMPT = '''You are a coffee expert. Based on a user's taste profile, recommend them a type of coffee or espresso based drink.
@@ -45,64 +78,87 @@ class apiRequest(BaseModel):
 #simple get for checking status
 @app.get("/", response_class = PlainTextResponse)
 async def health():
+    HEALTH_REQUESTS_TOTAL.inc()
     return "Running"
 
 #calling the local version of the model
 @app.post("/local")
 def runLocalModel(request: localRequest):
     #run local model
+    LOCAL_REQUESTS_TOTAL.inc()
+    started = perf_counter()
     
-    message = request.message
-    max_tokens = request.max_tokens
-    
-    USER_PROMPT = message
-    
-    chat = [
-        {'role': 'system', 'content': SYSTEM_PROMPT},
-        {'role': 'user', 'content': EXAMPLE_INPUT},
-        {'role': 'assistant', 'content': EXAMPLE_OUTPUT},
-        {'role': 'user', 'content': USER_PROMPT}
-    ]
+    try:
+        message = request.message
+        max_tokens = request.max_tokens
         
-    outputs = pipe(
-        chat,
-        do_sample=False,
-        max_new_tokens=max_tokens
-    )
+        USER_PROMPT = message
+        
+        chat = [
+            {'role': 'system', 'content': SYSTEM_PROMPT},
+            {'role': 'user', 'content': EXAMPLE_INPUT},
+            {'role': 'assistant', 'content': EXAMPLE_OUTPUT},
+            {'role': 'user', 'content': USER_PROMPT}
+        ]
+            
+        outputs = pipe(
+            chat,
+            do_sample=False,
+            max_new_tokens=max_tokens
+        )
 
-        
-    response = outputs[0]['generated_text'][-1]['content'].strip()
-    
-    return response
+            
+        response = outputs[0]['generated_text'][-1]['content'].strip()
+        return response
+    except Exception:
+        LOCAL_REQUEST_ERRORS_TOTAL.inc()
+        raise
+    finally:
+        LOCAL_REQUEST_DURATION_SECONDS.observe(perf_counter() - started)
 
 #calling the API version of the model
 @app.post("/api")
 def runAPIModel(request: apiRequest):
     #run api model
+    API_REQUESTS_TOTAL.inc()
+    started = perf_counter()
 
-    message = request.message
-    max_tokens = request.max_tokens
-    hf_token = request.hf_token
+    try:    
+        message = request.message
+        max_tokens = request.max_tokens
+        hf_token = request.hf_token
 
-    USER_PROMPT = message
-    
-    chat = [
-        {'role': 'system', 'content': SYSTEM_PROMPT},
-        {'role': 'user', 'content': EXAMPLE_INPUT},
-        {'role': 'assistant', 'content': EXAMPLE_OUTPUT},
-        {'role': 'user', 'content': USER_PROMPT}
-    ]
+        USER_PROMPT = message
+        
+        chat = [
+            {'role': 'system', 'content': SYSTEM_PROMPT},
+            {'role': 'user', 'content': EXAMPLE_INPUT},
+            {'role': 'assistant', 'content': EXAMPLE_OUTPUT},
+            {'role': 'user', 'content': USER_PROMPT}
+        ]
 
-    client = InferenceClient(
-        token=hf_token,
-        model="openai/gpt-oss-20b",
+        client = InferenceClient(
+            token=hf_token,
+            model="openai/gpt-oss-20b",
+        )
+
+        completion = client.chat_completion(
+            messages=chat,
+            max_tokens=max_tokens,
+            stream=False,
+        )
+                
+        response = completion.choices[0].message.content.strip()
+        return response
+    except Exception:
+        API_REQUEST_ERRORS_TOTAL.inc()
+        raise
+    finally:
+        API_REQUEST_DURATION_SECONDS.observe(perf_counter() - started)
+
+@app.get('/metrics')
+def metrics() -> Response:
+    return Response(
+        prometheus_client.generate_latest(),
+        media_type=prometheus_client.CONTENT_TYPE_LATEST
     )
-
-    completion = client.chat_completion(
-        messages=chat,
-        max_tokens=max_tokens,
-        stream=False,
-    )
-            
-    response = completion.choices[0].message.content.strip()
-    return response

@@ -4,7 +4,7 @@ WORKDIR /app
 
 COPY docker/requirements.txt /app/requirements.txt
 
-RUN pip install --no-cache-dir gradio requests
+RUN pip install --no-cache-dir gradio requests prometheus-client
 
 COPY src /app/src
 
