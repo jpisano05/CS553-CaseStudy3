@@ -4,7 +4,7 @@ import os
 
 #Code for differentiation between running locally and API is based on Professor Paffenroth's Chatbot
 
-api_url = "http://paffenroth-23.dyn.wpi.edu:9005"
+api_url = "http://paffenroth-23.dyn.wpi.edu:22131"
 
 def respond(
     message,
@@ -111,4 +111,4 @@ with gr.Blocks(title="Coffee Connoisseur", css="""
 
 
 if __name__ == "__main__":
-    demo.launch(server_name="0.0.0.0", server_port=7005)
+    demo.launch(server_name="0.0.0.0", server_port=22130)
