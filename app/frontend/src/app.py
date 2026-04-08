@@ -105,6 +105,8 @@ chatbot = gr.ChatInterface(
     ],
 )
 
+prometheus_client.start_http_server(22133)
+
 with gr.Blocks(title="Coffee Connoisseur", css="""
                body, * {
                     color: #795548;
